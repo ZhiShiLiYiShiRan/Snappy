@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+slack_sdk
+python-dotenv
+motor
+httpx
