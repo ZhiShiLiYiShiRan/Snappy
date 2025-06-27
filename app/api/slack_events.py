@@ -1,49 +1,45 @@
-from fastapi import APIRouter, Request, Header, HTTPException
+from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
+from fastapi import Body
 from app.utils.verify_signature import verify_slack_signature
+from app.services.slack_service import send_image_message_with_buttons
 import json
 import os
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/slack",
+    tags=["Slack"]
+)
+print("[debug] .env SLACK_BOT_TOKEN =", os.getenv("SLACK_BOT_TOKEN"))
+@router.post("/interactions")
+async def slack_interactions(request: Request):
+    if not await verify_slack_signature(request):
+        return JSONResponse(content={"error": "invalid signature"}, status_code=status.HTTP_403_FORBIDDEN)
 
-@router.post("/events")
-async def handle_slack_events(
-    request: Request,
-    x_slack_signature: str = Header(None),
-    x_slack_request_timestamp: str = Header(None)
-):
-    body = await request.body()
+    form = await request.form()
+    payload = json.loads(form["payload"])
 
-    if not verify_slack_signature(body, x_slack_request_timestamp, x_slack_signature):
-        raise HTTPException(status_code=403, detail="Invalid Slack signature")
+    action_id = payload["actions"][0]["action_id"]
+    user = payload["user"]["username"]
 
-    payload = json.loads(body)
+    if action_id == "approve_action":
+        response_text = f"✅ {user} 通过了此图片"
+    elif action_id == "reject_action":
+        response_text = f"❌ {user} 拒绝了此图片"
+    else:
+        response_text = "⚠️ 未知操作"
 
-    if payload.get("type") == "url_verification":
-        return JSONResponse(content={"challenge": payload.get("challenge")})
+    return JSONResponse(content={"text": response_text})
 
-    # 处理 /record 命令
-    if payload.get("command") == "/record":
-        return JSONResponse(content={
-            "response_type": "in_channel",
-            "text": "请选择你的操作：",
-            "blocks": [
-                {
-                    "type": "actions",
-                    "elements": [
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "功能测试"},
-                            "value": "function_tested"
-                        },
-                        {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "外观测试"},
-                            "value": "appearance_tested"
-                        }
-                    ]
-                }
-            ]
-        })
 
-    return {"status": "ok"}
+@router.get("/send-test-message",tags=["Test"])
+@router.post("/send-test-message",tags=["Test"])
+async def send_test(dummy: dict = Body(default={})):
+    print("🧪 send_test 被调用")
+    res = await send_image_message_with_buttons(
+        channel="C092X77JQV7",  # ✅ 使用你的 Slack 频道 ID
+        image_url="https://via.placeholder.com/300"
+    )
+    return res
+
+print("✅ slack_events.py 已加载")

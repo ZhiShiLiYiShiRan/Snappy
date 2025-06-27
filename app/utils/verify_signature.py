@@ -1,20 +1,23 @@
+import os
 import hmac
 import hashlib
-import os
 import time
-from dotenv import load_dotenv
-
-load_dotenv()
+from fastapi import Request
 
 SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET")
 
-def verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
-    if abs(time.time() - int(timestamp)) > 60 * 5:
+async def verify_slack_signature(request: Request) -> bool:
+    timestamp = request.headers.get("X-Slack-Request-Timestamp")
+    if not timestamp or abs(time.time() - int(timestamp)) > 60 * 5:
         return False
 
-    sig_basestring = f"v0:{timestamp}:{body.decode()}"
-    my_signature = "v0=" + hmac.new(
-        SLACK_SIGNING_SECRET.encode(), sig_basestring.encode(), hashlib.sha256
+    request_body = await request.body()
+    sig_basestring = f"v0:{timestamp}:{request_body.decode()}"
+    my_signature = 'v0=' + hmac.new(
+        SLACK_SIGNING_SECRET.encode(),
+        sig_basestring.encode(),
+        hashlib.sha256
     ).hexdigest()
 
-    return hmac.compare_digest(my_signature, signature)
+    slack_signature = request.headers.get("X-Slack-Signature")
+    return hmac.compare_digest(my_signature, slack_signature)
